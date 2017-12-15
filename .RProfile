@@ -1,0 +1,29 @@
+.First <- function(){
+	library("data.table")
+	library("ggplot2")
+	library("stats")
+	library("stringr")
+	options(papersize = "a4") 
+	options(editor = "notepad") 
+	options(pager = "internal")
+	options(Scipen = 20)
+	options(scipen = 20)
+	options(prompt = ">")
+	options(continue = "+") 
+	options(tab.width = 2) 
+	options(graphics.record = TRUE) 
+	options(max.print = 100000)
+	options(digits = 5)
+	options(stringsAsFactors = F)
+	options(datatable.print.topn = 10)
+	options(datatable.print.nrows = 50)
+	options(datatable.fread.dec.locale = "English_United States.1254")
+	Sys.setlocale("LC_ALL", "English_United States.1254")
+	closeAllConnections()
+	rm(list=ls());gc();	
+ cat("\nWelcome at", date(), "\n") 
+}
+
+.Last <- function(){ 
+ cat("\nGoodbye at ", date(), "\n")
+}
