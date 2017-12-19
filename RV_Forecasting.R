@@ -44,9 +44,8 @@ hpg_store   <- hpg_store[, ':='(hpg_district1 = str_split_fixed(hpg_area_name, "
                                 )]
 hpg_store[, hpg_area_name := NULL]
 
-test        <- test[, .(source = str_split_fixed(id, "_", n = 3)[,1],
-                        id     = str_split_fixed(id, "_", n = 3)[,2],
-                        date   = str_split_fixed(id, "_", n = 3)[,3],
+test        <- test[, .(air_store_id = paste0(str_split_fixed(id, "_", n = 3)[,1], "_", str_split_fixed(id, "_", n = 3)[,2]),
+                        date   = as.Date(str_split_fixed(id, "_", n = 3)[,3]),
                         visitors)] # visitors column is full of zeros since there has been no forecast all along.
 weather     <- weather[, date := as.Date(date)]
 
@@ -93,26 +92,45 @@ air_visit   <- merge(air_visit,
 # Save -----
 save.image(file = "RV_Forecasting.RData")
 
-# Data Manipulation / Aggregation ----
-air_daily <- merge( air[, .(daily_visitors = sum(visitors)), .(air_store_id, date = visit_date)],
-                    air[, .(daily_reserves = sum(visitors)), .(air_store_id, date = reserve_date)],
-                    by = c("air_store_id", "date"), all.x = T, all.y = T)
-air_daily[is.na(daily_visitors), daily_visitors := 0]
-air_daily[is.na(daily_reserves), daily_reserves := 0]
+# Data Manipulation / Creating Test & Train Datasets ----
+library("forecast")
+library("corrplot")
+train       <- air_visit[visit_date < "2017-04-23" & 
+                           air_store_id %in% test$air_store_id]
+train[, ':='(air_district1  = as.factor(air_district1),
+             air_district2  = as.factor(air_district2),
+             air_store_id   = as.factor(air_store_id),
+             air_genre_name = as.factor(air_genre_name))]
 
-air_visit <- merge(air_visit,
-                   air_daily,
-                   all.x = T, all.y = T, 
-                   by.x = c("air_store_id", "visit_date"), by.y = c("air_store_id", "date"))
+ts <- auto.arima(y = train$visit_date, x = train$visitors, xreg = train[, c(11, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)])
+pn <- plm(formula = visitors ~ Total + visit_holiday + rain_amount + Dining + Bar + Party + Cafe + Local + avg_temp + snowfall, 
+                data = train, index = c("air_store_id","visit_date"), model = "within")
+ls <- step(lm(formula = visitors ~ ., data = train), direction = "backward")
+logls <- step(lm(formula = log(visitors) ~ ., data = train), direction = "backward")
+save(ts, pn, ls, logls, file = "models.RData")
 
-# PreTime defines the mean hourly time interval between reservation and visit.
-air_store <- merge(air_store,
-                   air[, .(PreTime = mean(as.numeric(difftime(visit_datetime, reserve_datetime, units = "hours"
-                          )))), .(air_store_id)],
-                   by = "air_store_id", all.x = T)
-rm(air_daily)
+test        <- merge(test, date, by = "date")
+test        <- merge(test,
+                     air_store[, c(2,1,5,6,7,8,9,10,11,12)],
+                     by = "air_store_id", all.x = T)
+test        <- merge(test,
+                     weather,
+                     by = c("air_district1", "date"), all.x = T)
 
 # EDA / Some Basic Plots ----
+corrs    <- Hmisc::rcorr(as.matrix(air_visit[, -c(1,2,3,10,12,13,14)]), type = "spearman")$r
+cor_sigs <- Hmisc::rcorr(as.matrix(air_visit[, -c(1,2,3,10,12,13,14)]), type = "spearman")$P
+
+col3 <- colorRampPalette(c("red", "white", "blue"))
+
+dev.off();
+
+jpeg(filename = "Korelasyon Matrisi.jpeg", width = 1024, height = 768)
+corrplot(corrs, type = "upper", p.mat = cor_sigs, order = "hclust", addrect = 2,
+         sig.level = 0.05, tl.col = "black", col = col3(20), cl.pos = "b", tl.srt = 45, 
+         title = "Iliski Matrisi" )
+dev.off()
+
 jpeg(filename = "Visit Hour Examination.jpeg", width = 1024, height = 768)
 ggplot(data = air_reserve[visit_date < "2017-04-23", .(visitors = sum(visitors, na.rm = T)), .(visit_hour)],
        aes(x = visit_hour, y = visitors)) +
