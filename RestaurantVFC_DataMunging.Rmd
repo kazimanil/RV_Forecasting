@@ -1,0 +1,44 @@
+---
+title: "RestaurantVFC_DataMunging"
+author: "Kazım Anıl Eren"
+date: "10 Ocak 2018"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Libraries
+
+```{r echo = TRUE}
+library(knitr)
+```
+
+### Data Input 
+
+```{r}
+rm(list = ls()); gc(); dev.off() # Clearence
+air_reserve  <- fread(input = "csv_files/air_reserve.csv", encoding = "UTF-8")
+# air_store    <- fread(input = "csv_files/air_store_info.csv", encoding = "UTF-8") 
+air_visit    <- fread(input = "csv_files/air_visit_data.csv", encoding = "UTF-8")
+date         <- fread(input = "csv_files/date_info.csv", encoding = "UTF-8")
+hpg_reserve  <- fread(input = "csv_files/hpg_reserve.csv", encoding = "UTF-8")
+# hpg_store    <- fread(input = "csv_files/hpg_store_info.csv", encoding = "UTF-8") 
+id_relation  <- fread(input = "csv_files/store_id_relation.csv", encoding = "UTF-8")
+test         <- fread(input = "sample_submission.csv", encoding = "UTF-8")
+submission   <- copy(test)
+air_store_kg <- fread(input = "kaggle/air_store_info_with_nearest_active_station.csv", encoding = "UTF-8")[, c(1,2,3,4,5)]
+hpg_store_kg <- fread(input = "kaggle/hpg_store_info_with_nearest_active_station.csv", encoding = "UTF-8")
+# wstations_kg <- fread(input = "kaggle/nearby_active_stations.csv", encoding = "UTF-8")
+weather_kg   <- fread(input = "kaggle/weather_all.csv", encoding = "UTF-8")
+```
+
+
+### Data Corrections 
+
+It seems there are some area_names with two distinct location names.
+```{r}
+kable(air_store_kg[, .N, .(air_area_name, latitude, longitude)][, .N, .(air_area_name)][N > 1])
+```
+

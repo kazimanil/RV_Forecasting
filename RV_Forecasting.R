@@ -109,13 +109,13 @@ ls <- step(lm(formula = visitors ~ ., data = train), direction = "backward")
 logls <- step(lm(formula = log(visitors) ~ ., data = train), direction = "backward")
 save(ts, pn, ls, logls, file = "models.RData")
 
-test        <- merge(test, date, by = "date")
-test        <- merge(test,
-                     air_store[, c(2,1,5,6,7,8,9,10,11,12)],
-                     by = "air_store_id", all.x = T)
-test        <- merge(test,
-                     weather,
-                     by = c("air_district1", "date"), all.x = T)
+test <- merge(test, date, by = "date")
+test <- merge(test,
+              air_store[, c(2,1,5,6,7,8,9,10,11,12)],
+              by = "air_store_id", all.x = T)
+test <- merge(test,
+              weather,
+              by = c("air_district1", "date"), all.x = T)
 
 # EDA / Some Basic Plots ----
 corrs    <- Hmisc::rcorr(as.matrix(air_visit[, -c(1,2,3,10,12,13,14)]), type = "spearman")$r
