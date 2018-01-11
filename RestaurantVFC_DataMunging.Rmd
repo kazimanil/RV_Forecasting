@@ -1,7 +1,7 @@
 ---
 title: "RestaurantVFC_DataMunging"
 author: "Kazım Anıl Eren"
-date: "10 Ocak 2018"
+date: "11 Ocak 2018"
 output: html_document
 ---
 
@@ -11,34 +11,157 @@ knitr::opts_chunk$set(echo = FALSE)
 
 ### Libraries
 
-```{r echo = TRUE}
+```{r Libraries, echo = TRUE}
 library(knitr)
 ```
 
 ### Data Input 
 
-```{r}
-rm(list = ls()); gc(); dev.off() # Clearence
-air_reserve  <- fread(input = "csv_files/air_reserve.csv", encoding = "UTF-8")
-# air_store    <- fread(input = "csv_files/air_store_info.csv", encoding = "UTF-8") 
-air_visit    <- fread(input = "csv_files/air_visit_data.csv", encoding = "UTF-8")
-date         <- fread(input = "csv_files/date_info.csv", encoding = "UTF-8")
-hpg_reserve  <- fread(input = "csv_files/hpg_reserve.csv", encoding = "UTF-8")
-# hpg_store    <- fread(input = "csv_files/hpg_store_info.csv", encoding = "UTF-8") 
-id_relation  <- fread(input = "csv_files/store_id_relation.csv", encoding = "UTF-8")
-test         <- fread(input = "sample_submission.csv", encoding = "UTF-8")
-submission   <- copy(test)
-air_store_kg <- fread(input = "kaggle/air_store_info_with_nearest_active_station.csv", encoding = "UTF-8")[, c(1,2,3,4,5)]
-hpg_store_kg <- fread(input = "kaggle/hpg_store_info_with_nearest_active_station.csv", encoding = "UTF-8")
-# wstations_kg <- fread(input = "kaggle/nearby_active_stations.csv", encoding = "UTF-8")
-weather_kg   <- fread(input = "kaggle/weather_all.csv", encoding = "UTF-8")
+```{r Data Input, include = FALSE}
+rm(list = ls()); gc() # Clearence
+air_reserve <- fread(input = "csv_files/air_reserve.csv", encoding = "UTF-8")
+air_store   <- fread(input = "csv_files/air_store_info.csv", encoding = "UTF-8") 
+air_visit   <- fread(input = "csv_files/air_visit_data.csv", encoding = "UTF-8")
+date        <- fread(input = "csv_files/date_info.csv", encoding = "UTF-8")
+hpg_reserve <- fread(input = "csv_files/hpg_reserve.csv", encoding = "UTF-8")
+hpg_store   <- fread(input = "csv_files/hpg_store_info.csv", encoding = "UTF-8") 
+id_relation <- fread(input = "csv_files/store_id_relation.csv", encoding = "UTF-8")
+test        <- fread(input = "sample_submission.csv", encoding = "UTF-8")
+submission  <- copy(test)
+weather     <- fread(input = "japan/weather_data.csv", encoding = "UTF-8")
 ```
-
 
 ### Data Corrections 
 
-It seems there are some area_names with two distinct location names.
-```{r}
-kable(air_store_kg[, .N, .(air_area_name, latitude, longitude)][, .N, .(air_area_name)][N > 1])
+It seems there are some area_names with two distinct co-ordinates.
+
+```{r AIR Coordinates Detection}
+kable(air_store[, .N, .(air_area_name, latitude, longitude)][, .N, .(air_area_name)][N > 1])
+```
+
+```{r AIR Coordinates Correction}
+storelist <- air_store[, .N, .(air_area_name, latitude, longitude)][, .N, .(air_area_name)][N > 1]$air_area_name
+storelist <- air_store[air_area_name %in% storelist, .N, .(air_area_name, latitude, longitude)]
+storelist[, Real := ifelse(N == max(N), 1,0) , .(air_area_name)]
+air_store <- merge(air_store, 
+                   storelist[Real == 1, .(air_area_name, coorX = latitude, coorY = longitude)],
+                   by = "air_area_name", all.x = T)
+air_store[!is.na(coorX) & (latitude != coorX | longitude != coorY),
+          ':='(latitude = coorX, longitude = coorY)]
+air_store[, ':='(coorX = NULL, coorY = NULL)]
+rm(storelist)
+```
+
+```{r HPG Coordinates Detection}
+kable(hpg_store[, .N, .(hpg_area_name, latitude, longitude)][, .N, .(hpg_area_name)][N > 1])
+```
+
+```{r HPG Coordinates Correction}
+storelist <- hpg_store[, .N, .(hpg_area_name, latitude, longitude)][, .N, .(hpg_area_name)][N > 1]$hpg_area_name
+storelist <- hpg_store[hpg_area_name %in% storelist, .N, .(hpg_area_name, latitude, longitude)]
+storelist[, Real := ifelse(N == max(N), 1,0) , .(hpg_area_name)]
+storelist[hpg_area_name != "None None None"] # One Cannot correct no-location's coordinates.
+hpg_store <- merge(hpg_store, 
+                   storelist[Real == 1, .(hpg_area_name, coorX = latitude, coorY = longitude)],
+                   by = "hpg_area_name", all.x = T)
+hpg_store[!is.na(coorX) & (latitude != coorX | longitude != coorY),
+          ':='(latitude = coorX, longitude = coorY)]
+hpg_store[, ':='(coorX = NULL, coorY = NULL)]
+rm(storelist)
+```
+
+We can divide area_name column into three and separate date and time info from visit_datetime column.
+
+```{r Separating Area Names & Dates}
+air_reserve <- air_reserve[, .(air_store_id,
+                               visit_date   = as.Date(str_split_fixed(visit_datetime, pattern = " ", n = 2)[, 1]),
+                               visit_hour   = as.numeric(substr(str_split_fixed(visit_datetime, pattern = " ", n = 2)[, 2], 1, 2)),
+                               reserve_date = as.Date(str_split_fixed(reserve_datetime, pattern = " ", n = 2)[, 1]),
+                               reserve_hour = as.numeric(substr(str_split_fixed(reserve_datetime, pattern = " ", n = 2)[, 2], 1, 2)),
+                               visitors     = reserve_visitors
+                               )]
+
+air_store[, ':='(air_district1 = str_split_fixed(air_area_name, " ", n = 3)[,1],
+                 air_district2 = str_split_fixed(air_area_name, " ", n = 3)[,2],
+                 air_district3 = str_split_fixed(air_area_name, " ", n = 3)[,3]
+                )]
+air_store[, air_area_name := NULL]
+
+air_visit[, visit_date := as.Date(visit_date)]
+
+date        <- date[, .(date = as.Date(calendar_date), 
+                        day  = as.factor(day_of_week), 
+                        holiday_flg)]
+
+hpg_reserve <- hpg_reserve[, .(hpg_store_id,
+                               visit_date   = as.Date(str_split_fixed(visit_datetime, pattern = " ", n = 2)[, 1]),
+                               visit_hour   = as.numeric(substr(str_split_fixed(visit_datetime, pattern = " ", n = 2)[, 2], 1, 2)),
+                               reserve_date = as.Date(str_split_fixed(reserve_datetime, pattern = " ", n = 2)[, 1]),
+                               reserve_hour = as.numeric(substr(str_split_fixed(reserve_datetime, pattern = " ", n = 2)[, 2], 1, 2)),
+                               visitors     = reserve_visitors
+                              )]
+
+hpg_store   <- hpg_store[, ':='(hpg_district1 = str_split_fixed(hpg_area_name, " ", n = 3)[,1],
+                                hpg_district2 = str_split_fixed(hpg_area_name, " ", n = 3)[,2],
+                                hpg_district3 = str_split_fixed(hpg_area_name, " ", n = 3)[,3]
+                                )]
+hpg_store[, hpg_area_name := NULL]
+
+test        <- test[, .(air_store_id = paste0(str_split_fixed(id, "_", n = 3)[,1], "_", str_split_fixed(id, "_", n = 3)[,2]),
+                        date   = as.Date(str_split_fixed(id, "_", n = 3)[,3]),
+                        visitors)] # visitors column is full of zeros since there has been no forecast all along.
+weather     <- weather[, date := as.Date(date)]
+```
+
+There are some stores that match in those datasets. So let's add data from hpg_stores data.table which match with air_stores data.table. Then we'll drop them from hpg_stores data.table to avoid duplication.
+
+```{r AIR & HPG Merge}
+air_reserve <- rbind(air_reserve,
+                     cbind(merge(hpg_reserve, id_relation, by = "hpg_store_id")[, 7], 
+                           merge(hpg_reserve, id_relation, by = "hpg_store_id")[, 2:6]))
+hpg_reserve <- hpg_reserve[!hpg_store_id %in% id_relation$hpg_store_id]
+```
+
+I will introduce a variable called **PreTime** which will denote that "how many hours before a reservation is made prior to the visit". I also will split visit_hour variable into 4 categorical variables called **night**, **noon**, **afternoon** and **evening** to represent 4 parts of the day.
+
+```{r Introduction of Activity Date}
+air_reserve[, PreTime := as.numeric(visit_date - reserve_date) * 24 + visit_hour - reserve_hour]
+air_reserve[visit_hour < 8,                      period := "night"]
+air_reserve[visit_hour >= 8  & visit_hour <= 13, period := "noon"]
+air_reserve[visit_hour >= 14 & visit_hour <= 16, period := "afternoon"]
+air_reserve[visit_hour >= 17 & visit_hour <= 21, period := "evening"]
+air_reserve[visit_hour > 21,                     period := "night"]
+
+air_daily <- dcast.data.table(air_reserve, visit_date + air_store_id ~ period, fun.aggregate = sum, value.var = "visitors")
+air_daily[, reservations := afternoon + evening + night + noon]
+air_daily <- merge(air_daily,
+                   air_reserve[, .(meanPreTime = mean(PreTime)), .(air_store_id, visit_date)],
+                   by = c("air_store_id", "visit_date"), all.x = TRUE)
+```
+
+Now let's combine data.sets into one.
+
+```{r Voltran}
+air_visit   <- merge(air_visit, 
+                     air_daily, 
+                     by = c("air_store_id", "visit_date"), all = T)
+air_visit   <- merge(air_visit,
+                     date[, .(visit_date = date,
+                              visit_day  = day, 
+                              visit_holiday = holiday_flg)],
+                     by = "visit_date", all.x = T)
+air_visit[is.na(visitors), visitors := 0]
+air_visit[is.na(reservations), ':='(afternoon = 0, evening = 0, night = 0, noon = 0, reservations = 0)]
+
+air_visit   <- merge(air_visit,
+                     air_store[, c(2,1,5,6,7)],
+                     by = "air_store_id", all.x = T)
+air_visit   <- merge(air_visit,
+                     weather,
+                     by.x = c("air_district1", "visit_date"), by.y = c("air_district1", "date"), all.x = T)
+```
+
+```{r Save}
+save.image(file = "RV_Forecasting.RData")
 ```
 
