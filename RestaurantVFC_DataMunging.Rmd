@@ -12,7 +12,8 @@ knitr::opts_chunk$set(echo = FALSE)
 ### Libraries
 
 ```{r Libraries, echo = TRUE}
-library(knitr)
+library(knitr)   # For designing R Markdown document.
+library(leaflet) # For geo-graphical analysis.
 ```
 
 ### Data Input 
@@ -60,7 +61,7 @@ kable(hpg_store[, .N, .(hpg_area_name, latitude, longitude)][, .N, .(hpg_area_na
 storelist <- hpg_store[, .N, .(hpg_area_name, latitude, longitude)][, .N, .(hpg_area_name)][N > 1]$hpg_area_name
 storelist <- hpg_store[hpg_area_name %in% storelist, .N, .(hpg_area_name, latitude, longitude)]
 storelist[, Real := ifelse(N == max(N), 1,0) , .(hpg_area_name)]
-storelist[hpg_area_name != "None None None"] # One Cannot correct no-location's coordinates.
+storelist <- storelist[hpg_area_name != "None None None"] # One Cannot correct no-location's coordinates.
 hpg_store <- merge(hpg_store, 
                    storelist[Real == 1, .(hpg_area_name, coorX = latitude, coorY = longitude)],
                    by = "hpg_area_name", all.x = T)
@@ -110,7 +111,7 @@ hpg_store[, hpg_area_name := NULL]
 test        <- test[, .(air_store_id = paste0(str_split_fixed(id, "_", n = 3)[,1], "_", str_split_fixed(id, "_", n = 3)[,2]),
                         date   = as.Date(str_split_fixed(id, "_", n = 3)[,3]),
                         visitors)] # visitors column is full of zeros since there has been no forecast all along.
-weather     <- weather[, date := as.Date(date)]
+weather     <- weather[, date := as.Date(date, format = "%d.%m.%Y")]
 ```
 
 There are some stores that match in those datasets. So let's add data from hpg_stores data.table which match with air_stores data.table. Then we'll drop them from hpg_stores data.table to avoid duplication.
@@ -137,6 +138,25 @@ air_daily[, reservations := afternoon + evening + night + noon]
 air_daily <- merge(air_daily,
                    air_reserve[, .(meanPreTime = mean(PreTime)), .(air_store_id, visit_date)],
                    by = c("air_store_id", "visit_date"), all.x = TRUE)
+```
+
+Position or the district of a restaurant is key in determining the number of visitors. Thus, I will create *Amount of Restaurants* and *Amount of Different Genres* variables to calcualte the popularity of a district while *Same Type of Restaurants* variable for determining the competition of that restaurant within its district.
+
+```{r District Analysis}
+air_store <- merge(air_store,
+                   air_store[, .(AmountofRes = .N, AmountofGenre = length(unique(air_genre_name)))
+                             , .(latitude, longitude)],
+                   by = c("latitude", "longitude"))
+air_store <- merge(air_store,
+                   air_store[, .(SameTypeRes = .N), .(latitude, longitude, air_genre_name)],
+                   by = c("latitude", "longitude", "air_genre_name"))
+
+leaflet(air_store) %>%
+  addTiles() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addMarkers(~longitude, ~latitude, 
+             popup = ~air_genre_name,
+             clusterOptions = markerClusterOptions())
 ```
 
 Now let's combine data.sets into one.
