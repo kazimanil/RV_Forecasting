@@ -11,15 +11,15 @@ knitr::opts_chunk$set(echo = FALSE)
 
 ### Libraries
 
-```{r Libraries, echo = TRUE}
+```{r Libraries, echo = TRUE, warning = FALSE}
+rm(list = ls()); gc() # Clearence
 library(knitr)   # For designing R Markdown document.
 library(leaflet) # For geo-graphical analysis.
 ```
 
 ### Data Input 
 
-```{r Data Input, include = FALSE}
-rm(list = ls()); gc() # Clearence
+```{r Data Input, include = FALSE, warning = FALSE}
 air_reserve <- fread(input = "csv_files/air_reserve.csv", encoding = "UTF-8")
 air_store   <- fread(input = "csv_files/air_store_info.csv", encoding = "UTF-8") 
 air_visit   <- fread(input = "csv_files/air_visit_data.csv", encoding = "UTF-8")
@@ -27,8 +27,7 @@ date        <- fread(input = "csv_files/date_info.csv", encoding = "UTF-8")
 hpg_reserve <- fread(input = "csv_files/hpg_reserve.csv", encoding = "UTF-8")
 hpg_store   <- fread(input = "csv_files/hpg_store_info.csv", encoding = "UTF-8") 
 id_relation <- fread(input = "csv_files/store_id_relation.csv", encoding = "UTF-8")
-test        <- fread(input = "sample_submission.csv", encoding = "UTF-8")
-submission  <- copy(test)
+submission  <- fread(input = "sample_submission.csv", encoding = "UTF-8")
 weather     <- fread(input = "japan/weather_data.csv", encoding = "UTF-8")
 ```
 
@@ -108,9 +107,6 @@ hpg_store   <- hpg_store[, ':='(hpg_district1 = str_split_fixed(hpg_area_name, "
                                 )]
 hpg_store[, hpg_area_name := NULL]
 
-test        <- test[, .(air_store_id = paste0(str_split_fixed(id, "_", n = 3)[,1], "_", str_split_fixed(id, "_", n = 3)[,2]),
-                        date   = as.Date(str_split_fixed(id, "_", n = 3)[,3]),
-                        visitors)] # visitors column is full of zeros since there has been no forecast all along.
 weather     <- weather[, date := as.Date(date, format = "%d.%m.%Y")]
 ```
 
@@ -151,37 +147,22 @@ air_store <- merge(air_store,
                    air_store[, .(SameTypeRes = .N), .(latitude, longitude, air_genre_name)],
                    by = c("latitude", "longitude", "air_genre_name"))
 
-leaflet(air_store) %>%
-  addTiles() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addMarkers(~longitude, ~latitude, 
-             popup = ~air_genre_name,
-             clusterOptions = markerClusterOptions())
+# leaflet(air_store) %>%
+#   addTiles() %>%
+#   addProviderTiles("CartoDB.Positron") %>%
+#   addMarkers(~longitude, ~latitude, 
+#              popup = ~air_genre_name,
+#              clusterOptions = markerClusterOptions())
 ```
 
 Now let's combine data.sets into one.
 
-```{r Voltran}
+```{r Reservations & Visits Merge}
 air_visit   <- merge(air_visit, 
                      air_daily, 
                      by = c("air_store_id", "visit_date"), all = T)
-air_visit   <- merge(air_visit,
-                     date[, .(visit_date = date,
-                              visit_day  = day, 
-                              visit_holiday = holiday_flg)],
-                     by = "visit_date", all.x = T)
-air_visit[is.na(visitors), visitors := 0]
-air_visit[is.na(reservations), ':='(afternoon = 0, evening = 0, night = 0, noon = 0, reservations = 0)]
-
-air_visit   <- merge(air_visit,
-                     air_store[, c(2,1,5,6,7)],
-                     by = "air_store_id", all.x = T)
-air_visit   <- merge(air_visit,
-                     weather,
-                     by.x = c("air_district1", "visit_date"), by.y = c("air_district1", "date"), all.x = T)
 ```
 
 ```{r Save}
 save.image(file = "RV_Forecasting.RData")
 ```
-

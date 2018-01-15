@@ -1,0 +1,72 @@
+---
+title: "RestaurantVFC_Training"
+author: "Kazım Anıl Eren"
+date: "15 Ocak 2018"
+output: html_document
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r Data Input}
+rm(list = ls()); gc(); closeAllConnections()
+load("RV_Forecasting.RData")
+library(xgboost) # For forecasts
+library(plm)     # Panel Models
+library(lmtest)  # Heteroskedasticity Tests
+library(tseries) # Stationarity Tests
+```
+
+```{r Test & Train Data Split}
+submission <- submission[, .(air_store_id = paste0(str_split_fixed(id, "_", n = 3)[,1], "_", str_split_fixed(id, "_", n = 3)[,2]),
+                             date   = as.Date(str_split_fixed(id, "_", n = 3)[,3]),
+                             visitors)] # visitors column is full of zeros since there has been no forecast all along.
+
+crossjoin <- CJ(air_store_id = unique(air_visit$air_store_id), date = as.Date(unique(date$date)))
+train <- crossjoin[date < "2017-04-23" & air_store_id %in% submission$air_store_id]
+train <- merge(train,
+               air_store[, .(air_store_id, air_district1, air_district2, air_district3, air_genre_name, AmountofRes, AmountofGenre, SameTypeRes)],
+               by = "air_store_id")
+
+train <- merge(train,
+               weather,
+               by = c("date", "air_district1"))
+
+train <- merge(train,
+               date,
+               by = "date")
+
+train <- merge(train,
+               air_visit,
+               by.x = c("air_store_id", "date"), by.y = c("air_store_id", "visit_date"), all.x = T)
+train[, day := relevel(as.factor(day), "Monday")]
+
+test <- crossjoin[date > "2017-04-22" & air_store_id %in% submission$air_store_id]
+test <- merge(test,
+              air_store[, .(air_store_id, air_district1, air_district2, air_district3, air_genre_name, AmountofRes, AmountofGenre, SameTypeRes)],
+              by = "air_store_id")
+
+test <- merge(test,
+              weather,
+              by = c("date", "air_district1"))
+
+test <- merge(test,
+              date,
+              by = "date")
+
+test <- merge(test,
+              air_visit,
+              by.x = c("air_store_id", "date"), by.y = c("air_store_id", "visit_date"), all.x = T)
+
+test[, day := relevel(as.factor(day), "Monday")]
+```
+
+```{r Panel Model}
+panel_fixed  <- plm(formula = visitors ~ reservations, data = train, index = c("air_store_id", "date"), model = "within")
+panel_random <- plm(formula = visitors ~ reservations, data = train, index = c("air_store_id", "date"), model = "random")
+phtest(panel_fixed, panel_random) #below 0.05 -> use fixed.
+panel_timefixed <- plm(formula = visitors ~ reservations + day, data = train, index = c("air_store_id", "date"), model = "within")
+phtest(panel_timefixed, panel_fixed) #below 0.05 -> use fixed.
+```
+
